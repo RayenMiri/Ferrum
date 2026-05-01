@@ -1,4 +1,6 @@
 /data
 /venv
+/docs
 .claude
 claude.md
+.worktrees
