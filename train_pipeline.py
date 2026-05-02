@@ -25,14 +25,27 @@ def main():
     pgn_paths = [pathlib.Path(p) for p in args.pgn]
     hdf5_path = pathlib.Path(args.hdf5)
 
+    print(f"[main] device={config.DEVICE} pgn_files={len(pgn_paths)} hdf5={hdf5_path}")
+
     if not hdf5_path.exists():
         print(f"Parsing PGN files -> {hdf5_path}")
         parse_pgn_to_hdf5(pgn_paths, hdf5_path)
+    else:
+        print(f"[main] reusing existing HDF5 dataset {hdf5_path}")
 
     train_loader = make_dataloader(hdf5_path, augment=True, split="train")
     val_loader   = make_dataloader(hdf5_path, augment=False, split="val")
 
+    print(
+        f"[main] loaders ready: train_samples={len(train_loader.dataset)} "
+        f"val_samples={len(val_loader.dataset)}"
+    )
+
     model = FerrumNet(config.FILTERS, config.NUM_BLOCKS).to(config.DEVICE)
+    print(
+        f"[main] model ready: filters={config.FILTERS} blocks={config.NUM_BLOCKS} "
+        f"params={sum(p.numel() for p in model.parameters())}"
+    )
 
     start_epoch, start_step, optimizer = 0, 0, None
     if args.resume:

@@ -2,7 +2,6 @@
 import chess
 import chess.pgn
 import h5py
-import multiprocessing
 import numpy as np
 import os
 import random
@@ -16,6 +15,45 @@ from board_encoder import encode, _flip_move_index
 from move_encoder import move_to_index, legal_move_mask
 
 _CLASSICAL_RAPID = {"classical", "rapid"}
+
+
+class _SplitWriter:
+    def __init__(self, h5_file: h5py.File, group_name: str, chunk_size: int):
+        self._grp = h5_file.require_group(group_name)
+        self._chunk_size = chunk_size
+        self._pos_buf, self._pol_buf = [], []
+        self._val_buf, self._msk_buf = [], []
+
+    def add(self, state, policy, value, mask):
+        self._pos_buf.append(state)
+        self._pol_buf.append(policy)
+        self._val_buf.append(value)
+        self._msk_buf.append(mask)
+        if len(self._pos_buf) >= self._chunk_size:
+            self.flush()
+
+    def flush(self):
+        if not self._pos_buf:
+            return
+        data = {
+            "positions":      np.stack(self._pos_buf).astype(np.float32),
+            "policy_targets": np.array(self._pol_buf, dtype=np.int32),
+            "value_targets":  np.array(self._val_buf, dtype=np.float32),
+            "legal_masks":    np.stack(self._msk_buf).astype(bool),
+        }
+        n = len(self._pos_buf)
+        for name, arr in data.items():
+            if name not in self._grp:
+                self._grp.create_dataset(name, data=arr, maxshape=(None,) + arr.shape[1:], chunks=True)
+            else:
+                ds = self._grp[name]
+                old = ds.shape[0]
+                ds.resize(old + n, axis=0)
+                ds[old:] = arr
+        self._pos_buf.clear()
+        self._pol_buf.clear()
+        self._val_buf.clear()
+        self._msk_buf.clear()
 
 
 def _time_control_type(tc: str) -> str:
@@ -117,39 +155,75 @@ def _write_split_to_hdf5(h5_file: h5py.File, group_name: str,
 def parse_pgn_to_hdf5(pgn_paths: List[Path], out_path: Path,
                        chunk_size: int = 4096,
                        split: Tuple[float, float, float] = (0.9, 0.05, 0.05)):
-    """Parse PGN files in parallel and write train/val/test splits to one HDF5 file."""
-    # Process each PGN file in parallel
-    with multiprocessing.Pool(processes=config.NUM_WORKERS) as pool:
-        results = pool.map(_process_pgn_file, pgn_paths)
-    for i, r in enumerate(results):
-        if not r:
-            print(f"[warn] no positions from {pgn_paths[i]} — file empty, filtered out, or worker error")
-
-    # Flatten: results is list-of-lists-of-games; combine all games
-    all_games = []
-    for file_games in results:
-        all_games.extend(file_games)
-
-    # Split by game, not by position
-    n = len(all_games)
-    if n == 0:
-        train_games, val_games, test_games = [], [], []
-    elif n == 1:
-        train_games, val_games, test_games = all_games, [], []
-    elif n == 2:
-        train_games, val_games, test_games = all_games[:1], all_games[1:], []
-    else:
-        train_end = max(1, round(n * split[0]))
-        val_end   = train_end + max(0, round(n * split[1]))
-        val_end   = min(val_end, n - 1)  # leave at least one for test if n >= 3
-        train_games = all_games[:train_end]
-        val_games   = all_games[train_end:val_end]
-        test_games  = all_games[val_end:]
+    """Stream PGN files into train/val/test HDF5 splits with low memory use."""
+    print(f"[data] streaming {len(pgn_paths)} PGN file(s) -> {out_path}")
+    train_prob, val_prob, _ = split
+    progress_interval = 100_000
+    processed = accepted = filtered = malformed = 0
 
     with h5py.File(out_path, "w") as h5:
-        _write_split_to_hdf5(h5, "train", train_games, chunk_size)
-        _write_split_to_hdf5(h5, "val",   val_games,   chunk_size)
-        _write_split_to_hdf5(h5, "test",  test_games,  chunk_size)
+        writers = {
+            "train": _SplitWriter(h5, "train", chunk_size),
+            "val": _SplitWriter(h5, "val", chunk_size),
+            "test": _SplitWriter(h5, "test", chunk_size),
+        }
+
+        for pgn_path in pgn_paths:
+            print(f"[data] reading {pgn_path}")
+            with open(pgn_path, errors="replace") as f:
+                while True:
+                    game = chess.pgn.read_game(f)
+                    if game is None:
+                        break
+
+                    processed += 1
+                    if processed % progress_interval == 0:
+                        print(
+                            f"[data] processed={processed} accepted={accepted} "
+                            f"filtered={filtered} malformed={malformed}"
+                        )
+
+                    if not _game_passes_filter(game):
+                        filtered += 1
+                        continue
+
+                    try:
+                        positions = list(_extract_positions(game))
+                    except Exception as exc:
+                        malformed += 1
+                        print(f"[warn] skipping malformed game #{processed} in {pgn_path}: {exc}")
+                        continue
+
+                    if not positions:
+                        continue
+
+                    if accepted == 0:
+                        writer = writers["train"]
+                    elif accepted == 1 and val_prob > 0:
+                        writer = writers["val"]
+                    elif accepted == 2 and split[2] > 0:
+                        writer = writers["test"]
+                    else:
+                        split_roll = random.random()
+                        if split_roll < train_prob:
+                            writer = writers["train"]
+                        elif split_roll < train_prob + val_prob:
+                            writer = writers["val"]
+                        else:
+                            writer = writers["test"]
+
+                    for t, p, v, m in positions:
+                        writer.add(t, p, v, m)
+                    accepted += 1
+
+        for writer in writers.values():
+            writer.flush()
+
+    print(
+        f"[data] done processed={processed} accepted={accepted} "
+        f"filtered={filtered} malformed={malformed}"
+    )
+    print(f"[data] wrote HDF5 dataset to {out_path}")
 
 
 class FerrumDataset(Dataset):
@@ -163,6 +237,10 @@ class FerrumDataset(Dataset):
             grp = h5[split]
             self._len = grp["positions"].shape[0] if "positions" in grp else 0
         self._h5 = None
+        print(
+            f"[data] loaded split='{split}' augment={augment} "
+            f"samples={self._len} from {h5_path}"
+        )
 
     def __del__(self):
         if getattr(self, "_h5", None) is not None:
@@ -197,5 +275,9 @@ class FerrumDataset(Dataset):
 def make_dataloader(h5_path: Path, augment: bool, batch_size: int = None,
                     split: str = "train") -> DataLoader:
     ds = FerrumDataset(h5_path, augment=augment, split=split)
+    print(
+        f"[data] dataloader split='{split}' batch_size={batch_size or config.BATCH_SIZE} "
+        f"shuffle={augment} workers={config.NUM_WORKERS} pin_memory={torch.cuda.is_available()}"
+    )
     return DataLoader(ds, batch_size=batch_size or config.BATCH_SIZE,
                       shuffle=augment, num_workers=config.NUM_WORKERS, pin_memory=torch.cuda.is_available())
