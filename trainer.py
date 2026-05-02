@@ -88,6 +88,15 @@ def train(model, train_loader, val_loader, start_epoch=0, start_step=0, optimize
     steps_per_epoch = len(train_loader)
     scheduler = build_scheduler(optimizer, steps_per_epoch)
 
+    print(
+        f"[train] device={config.DEVICE} epochs={config.MAX_EPOCHS} "
+        f"steps_per_epoch={steps_per_epoch} start_epoch={start_epoch} start_step={start_step}"
+    )
+    print(
+        f"[train] train_batches={len(train_loader)} val_batches={len(val_loader)} "
+        f"train_samples={len(train_loader.dataset)} val_samples={len(val_loader.dataset)}"
+    )
+
     for _ in range(start_step):
         scheduler.step()
 
@@ -99,8 +108,18 @@ def train(model, train_loader, val_loader, start_epoch=0, start_step=0, optimize
         model.train()
         epoch_loss_sum = 0.0
         epoch_batches = 0
+        first_batch_logged = False
 
         for batch in train_loader:
+            if not first_batch_logged:
+                state, policy_target, value_target, legal_mask = batch
+                print(
+                    f"[train] first batch shapes: state={tuple(state.shape)} "
+                    f"policy={tuple(policy_target.shape)} value={tuple(value_target.shape)} "
+                    f"mask={tuple(legal_mask.shape)}"
+                )
+                first_batch_logged = True
+
             loss_val = training_step(model, batch, optimizer, config.DEVICE)
             scheduler.step()
             step += 1
@@ -137,3 +156,5 @@ def train(model, train_loader, val_loader, start_epoch=0, start_step=0, optimize
             f"train_loss={train_loss:.4f} "
             f"val_top1={val_top1:.4f} val_top5={val_top5:.4f}"
         )
+
+    print(f"[train] done at step={step}")

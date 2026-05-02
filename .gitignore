@@ -1,6 +1,7 @@
 /data
 /venv
 /docs
+graphify-out/
 *.pyc
 .claude
 claude.md
