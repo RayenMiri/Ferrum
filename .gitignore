@@ -1,6 +1,6 @@
 /data
 /venv
 /docs
+*.pyc
 .claude
 claude.md
-.worktrees
