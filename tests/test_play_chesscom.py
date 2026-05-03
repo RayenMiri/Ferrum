@@ -4,7 +4,7 @@ import chess
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from play_chesscom import HotkeyController
+from play_chesscom import HotkeyController, MoveExecutor
 
 
 def test_f9_sets_paused():
@@ -37,8 +37,6 @@ def test_unknown_key_does_nothing():
     assert not ctrl.paused.is_set()
     assert not ctrl.quit_flag.is_set()
 
-
-from play_chesscom import MoveExecutor
 
 
 def test_white_a1_bottom_left():
