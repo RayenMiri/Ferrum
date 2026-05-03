@@ -187,3 +187,57 @@ async def test_tick_filters_blank_san_text():
 
     assert new_count == 1
     assert board.ply() == 1
+
+
+async def test_execute_white_e2e4_clicks_correct_coords():
+    mock_locator = MagicMock()
+    mock_locator.bounding_box = AsyncMock(
+        return_value={'x': 0.0, 'y': 0.0, 'width': 800.0, 'height': 800.0}
+    )
+    mock_mouse = AsyncMock()
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+    mock_page.mouse = mock_mouse
+
+    executor = MoveExecutor(mock_page)
+    move = chess.Move.from_uci('e2e4')
+    await executor.execute(move, flipped=False)
+
+    calls = mock_mouse.click.call_args_list
+    assert len(calls) == 2
+    # e2: file=4, rank=1 → x=(4+0.5)*100=450, y=(7-1+0.5)*100=650
+    assert calls[0].args[0] == pytest.approx(450.0)
+    assert calls[0].args[1] == pytest.approx(650.0)
+    # e4: file=4, rank=3 → x=(4+0.5)*100=450, y=(7-3+0.5)*100=450
+    assert calls[1].args[0] == pytest.approx(450.0)
+    assert calls[1].args[1] == pytest.approx(450.0)
+
+
+async def test_execute_promotion_clicks_first_promotion_piece():
+    mock_locator = MagicMock()
+    mock_locator.bounding_box = AsyncMock(
+        return_value={'x': 0.0, 'y': 0.0, 'width': 800.0, 'height': 800.0}
+    )
+    mock_promo_locator = MagicMock()
+    mock_promo_first = MagicMock()
+    mock_promo_first.click = AsyncMock()
+    mock_promo_locator.first = mock_promo_first
+
+    mock_mouse = AsyncMock()
+    mock_page = MagicMock()
+
+    def locator_side_effect(selector: str) -> MagicMock:
+        if selector == 'chess-board':
+            return mock_locator
+        if selector == '.promotion-piece':
+            return mock_promo_locator
+        return MagicMock()
+
+    mock_page.locator.side_effect = locator_side_effect
+    mock_page.mouse = mock_mouse
+
+    executor = MoveExecutor(mock_page)
+    move = chess.Move.from_uci('e7e8q')
+    await executor.execute(move, flipped=False)
+
+    mock_promo_first.click.assert_called_once()

@@ -68,6 +68,17 @@ class MoveExecutor:
             y = board_box['y'] + (rank_idx + 0.5) * cell
         return x, y
 
+    async def execute(self, move: chess.Move, flipped: bool) -> None:
+        board_box = await self.page.locator('chess-board').bounding_box()
+        from_x, from_y = self._square_to_page_coords(move.from_square, flipped, board_box)
+        to_x, to_y = self._square_to_page_coords(move.to_square, flipped, board_box)
+        await self.page.mouse.click(from_x, from_y)
+        await asyncio.sleep(0.05)
+        await self.page.mouse.click(to_x, to_y)
+        if move.promotion:
+            await asyncio.sleep(0.1)
+            await self.page.locator('.promotion-piece').first.click()
+
 
 class BoardWatcher:
     def __init__(self, page: Page) -> None:
