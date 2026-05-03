@@ -241,3 +241,29 @@ async def test_execute_promotion_clicks_first_promotion_piece():
     await executor.execute(move, flipped=False)
 
     mock_promo_first.click.assert_called_once()
+
+
+from play_chesscom import BrowserController
+
+
+async def test_login_navigates_and_fills_form():
+    mock_page = AsyncMock()
+
+    ctrl = BrowserController(mock_page, username='testuser', password='s3cr3t')
+    await ctrl.login()
+
+    mock_page.goto.assert_called_once_with('https://www.chess.com/login')
+    mock_page.fill.assert_any_call('#username', 'testuser')
+    mock_page.fill.assert_any_call('#password', 's3cr3t')
+    mock_page.click.assert_called_with('button[type="submit"]')
+    mock_page.wait_for_url.assert_called_once()
+
+
+async def test_login_wait_url_uses_timeout():
+    mock_page = AsyncMock()
+
+    ctrl = BrowserController(mock_page, username='u', password='p')
+    await ctrl.login()
+
+    call_kwargs = mock_page.wait_for_url.call_args
+    assert call_kwargs.kwargs.get('timeout', 0) >= 10000

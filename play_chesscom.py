@@ -70,6 +70,8 @@ class MoveExecutor:
 
     async def execute(self, move: chess.Move, flipped: bool) -> None:
         board_box = await self.page.locator('chess-board').bounding_box()
+        if board_box is None:
+            raise RuntimeError('chess-board element not visible; cannot compute click coordinates')
         from_x, from_y = self._square_to_page_coords(move.from_square, flipped, board_box)
         to_x, to_y = self._square_to_page_coords(move.to_square, flipped, board_box)
         await self.page.mouse.click(from_x, from_y)
@@ -111,3 +113,17 @@ class BoardWatcher:
             except (chess.IllegalMoveError, ValueError):
                 break  # DOM returned illegal move; re-sync next tick
         return applied
+
+
+class BrowserController:
+    def __init__(self, page: Page, username: str, password: str) -> None:
+        self.page = page
+        self.username = username
+        self.password = password
+
+    async def login(self) -> None:
+        await self.page.goto('https://www.chess.com/login')
+        await self.page.fill('#username', self.username)
+        await self.page.fill('#password', self.password)
+        await self.page.click('button[type="submit"]')
+        await self.page.wait_for_url('**/home**', timeout=15000)
