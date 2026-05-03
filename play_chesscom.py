@@ -22,8 +22,8 @@ class HotkeyController:
         self._listener: Any = None
 
     def _on_press(self, key: Any) -> None:
+        from pynput.keyboard import Key
         try:
-            from pynput.keyboard import Key
             if key == Key.f9:
                 self.paused.set()
                 print('[Ferrum] Paused (F10 to resume)')
@@ -33,8 +33,8 @@ class HotkeyController:
             elif key == Key.f11:
                 self.quit_flag.set()
                 print('[Ferrum] Quitting...')
-        except Exception:
-            pass
+        except AttributeError:
+            pass  # pynput special keys without a Key enum entry
 
     def start(self) -> None:
         from pynput import keyboard
