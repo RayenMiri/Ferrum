@@ -45,3 +45,25 @@ class HotkeyController:
     def stop(self) -> None:
         if self._listener is not None:
             self._listener.stop()
+
+
+class MoveExecutor:
+    def __init__(self, page: Page) -> None:
+        self.page = page
+
+    @staticmethod
+    def _square_to_page_coords(
+        square: int,
+        flipped: bool,
+        board_box: dict[str, float],
+    ) -> tuple[float, float]:
+        cell = board_box['width'] / 8.0
+        file_idx = chess.square_file(square)
+        rank_idx = chess.square_rank(square)
+        if not flipped:
+            x = board_box['x'] + (file_idx + 0.5) * cell
+            y = board_box['y'] + (7 - rank_idx + 0.5) * cell
+        else:
+            x = board_box['x'] + (7 - file_idx + 0.5) * cell
+            y = board_box['y'] + (rank_idx + 0.5) * cell
+        return x, y
