@@ -285,3 +285,80 @@ async def test_start_game_waits_for_board_element():
     await ctrl.start_game()
 
     mock_page.wait_for_selector.assert_called_once_with('chess-board', timeout=60000)
+
+
+from unittest.mock import patch
+
+from play_chesscom import run
+
+
+async def test_run_exits_immediately_when_quit_flag_set():
+    hotkeys = HotkeyController()
+    hotkeys.quit_flag.set()
+
+    mock_browser = AsyncMock()
+    mock_watcher = AsyncMock()
+    mock_watcher.detect_color = AsyncMock(return_value=chess.WHITE)
+    mock_executor = AsyncMock()
+    mock_ferrum = MagicMock()
+
+    await run(mock_browser, mock_watcher, mock_executor, mock_ferrum, hotkeys)
+
+    mock_browser.login.assert_called_once()
+    mock_browser.start_game.assert_called_once()
+    mock_watcher.tick.assert_not_called()
+    mock_ferrum.choose_move.assert_not_called()
+
+
+async def test_run_calls_choose_move_on_our_turn():
+    hotkeys = HotkeyController()
+    tick_count = 0
+
+    async def mock_tick(board: chess.Board) -> int:
+        nonlocal tick_count
+        tick_count += 1
+        if tick_count >= 2:
+            hotkeys.quit_flag.set()
+        return 0  # no DOM moves — board state driven by optimistic push in run()
+
+    mock_browser = AsyncMock()
+    mock_watcher = AsyncMock()
+    mock_watcher.detect_color = AsyncMock(return_value=chess.WHITE)  # playing WHITE
+    mock_watcher.tick = mock_tick
+    mock_executor = AsyncMock()
+
+    mock_ferrum = MagicMock()
+    mock_ferrum.choose_move = MagicMock(return_value=chess.Move.from_uci('e2e4'))
+
+    with patch('asyncio.sleep', new=AsyncMock()):
+        await run(mock_browser, mock_watcher, mock_executor, mock_ferrum, hotkeys)
+
+    # Tick 1: board empty, white's turn → choose_move called, e2e4 pushed optimistically
+    # Tick 2: board.turn==BLACK (not our turn) → skip; quit set → exit
+    mock_ferrum.choose_move.assert_called_once()
+    mock_executor.execute.assert_called_once()
+
+
+async def test_run_skips_move_when_paused():
+    hotkeys = HotkeyController()
+    hotkeys.paused.set()
+    call_count = 0
+
+    async def mock_tick(board: chess.Board) -> int:
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            hotkeys.quit_flag.set()
+        return 0
+
+    mock_browser = AsyncMock()
+    mock_watcher = AsyncMock()
+    mock_watcher.detect_color = AsyncMock(return_value=chess.WHITE)  # playing WHITE
+    mock_watcher.tick = mock_tick
+    mock_executor = AsyncMock()
+    mock_ferrum = MagicMock()
+
+    with patch('asyncio.sleep', new=AsyncMock()):
+        await run(mock_browser, mock_watcher, mock_executor, mock_ferrum, hotkeys)
+
+    mock_ferrum.choose_move.assert_not_called()

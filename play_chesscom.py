@@ -134,3 +134,88 @@ class BrowserController:
         await self.page.click('button.ui-button-primary')
         await self.page.wait_for_selector('chess-board', timeout=60000)
         print('[Ferrum] Board detected — game started')
+
+
+async def run(
+    browser: BrowserController,
+    watcher: BoardWatcher,
+    executor: MoveExecutor,
+    ferrum: FerrumOpponent,
+    hotkeys: HotkeyController,
+) -> None:
+    await browser.login()
+    await browser.start_game()
+
+    our_color = await watcher.detect_color()
+    flipped = (our_color == chess.BLACK)
+    board = chess.Board()
+
+    print(f"[Ferrum] Game started — playing as {'BLACK' if flipped else 'WHITE'}")
+    print('[Ferrum] F9=pause  F10=resume  F11=quit')
+
+    while not hotkeys.quit_flag.is_set():
+        await asyncio.sleep(0.15)
+        new_count = await watcher.tick(board)
+
+        if new_count > 0:
+            print(f"[Ferrum] Ply {board.ply()} — {'WHITE' if board.turn == chess.WHITE else 'BLACK'} to move")
+
+        if board.is_game_over():
+            print(f"[Ferrum] Game over: {board.outcome().result()}")
+            break
+
+        if board.turn == our_color and not hotkeys.paused.is_set():
+            move = ferrum.choose_move(board)
+            san = board.san(move)
+            board.push(move)  # optimistic update — prevents double-play before DOM reflects our move
+            print(f'[Ferrum] Playing {san}')
+            await executor.execute(move, flipped)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Ferrum chess.com bot')
+    parser.add_argument('--checkpoint', required=True, help='Path to Ferrum checkpoint (.pt)')
+    parser.add_argument('--username', default=None, help='chess.com username (or set CHESSCOM_USERNAME in .env)')
+    parser.add_argument('--password', default=None, help='chess.com password (or set CHESSCOM_PASSWORD in .env)')
+    return parser.parse_args()
+
+
+def main() -> None:
+    load_dotenv()
+    args = parse_args()
+
+    username = args.username or os.environ.get('CHESSCOM_USERNAME', '')
+    password = args.password or os.environ.get('CHESSCOM_PASSWORD', '')
+
+    if not username or not password:
+        raise SystemExit(
+            'Provide --username/--password or set CHESSCOM_USERNAME/CHESSCOM_PASSWORD in a .env file'
+        )
+
+    ferrum = FerrumOpponent(
+        OpponentConfig(mode='checkpoint', checkpoint=Path(args.checkpoint))
+    )
+    hotkeys = HotkeyController()
+    hotkeys.start()
+
+    async def _run() -> None:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=False)
+            page = await browser.new_page()
+            ctrl = BrowserController(page, username=username, password=password)
+            watcher = BoardWatcher(page)
+            executor = MoveExecutor(page)
+            try:
+                await run(ctrl, watcher, executor, ferrum, hotkeys)
+            finally:
+                await browser.close()
+
+    try:
+        asyncio.run(_run())
+    finally:
+        hotkeys.stop()
+        ferrum.close()
+
+
+if __name__ == '__main__':
+    main()
