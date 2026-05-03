@@ -267,3 +267,21 @@ async def test_login_wait_url_uses_timeout():
 
     call_kwargs = mock_page.wait_for_url.call_args
     assert call_kwargs.kwargs.get('timeout', 0) >= 10000
+
+
+async def test_start_game_navigates_to_play_online():
+    mock_page = AsyncMock()
+
+    ctrl = BrowserController(mock_page, username='u', password='p')
+    await ctrl.start_game()
+
+    mock_page.goto.assert_called_once_with('https://www.chess.com/play/online')
+
+
+async def test_start_game_waits_for_board_element():
+    mock_page = AsyncMock()
+
+    ctrl = BrowserController(mock_page, username='u', password='p')
+    await ctrl.start_game()
+
+    mock_page.wait_for_selector.assert_called_once_with('chess-board', timeout=60000)

@@ -127,3 +127,10 @@ class BrowserController:
         await self.page.fill('#password', self.password)
         await self.page.click('button[type="submit"]')
         await self.page.wait_for_url('**/home**', timeout=15000)
+
+    async def start_game(self) -> None:
+        await self.page.goto('https://www.chess.com/play/online')
+        await self.page.click('text=3 min')
+        await self.page.click('button.ui-button-primary')
+        await self.page.wait_for_selector('chess-board', timeout=60000)
+        print('[Ferrum] Board detected — game started')
