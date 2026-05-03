@@ -113,3 +113,77 @@ async def test_detect_color_handles_none_attribute():
     color = await watcher.detect_color()
 
     assert color == chess.WHITE
+
+
+async def test_tick_applies_new_moves_from_dom():
+    mock_el1 = MagicMock()
+    mock_el1.inner_text = AsyncMock(return_value='e4')
+    mock_el2 = MagicMock()
+    mock_el2.inner_text = AsyncMock(return_value='e5')
+
+    mock_locator = MagicMock()
+    mock_locator.all = AsyncMock(return_value=[mock_el1, mock_el2])
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    board = chess.Board()
+    new_count = await watcher.tick(board)
+
+    assert new_count == 2
+    assert board.ply() == 2
+
+
+async def test_tick_returns_zero_when_no_new_moves():
+    mock_locator = MagicMock()
+    mock_locator.all = AsyncMock(return_value=[])
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    board = chess.Board()
+    new_count = await watcher.tick(board)
+
+    assert new_count == 0
+    assert board.ply() == 0
+
+
+async def test_tick_skips_already_applied_moves():
+    mock_el1 = MagicMock()
+    mock_el1.inner_text = AsyncMock(return_value='e4')
+
+    mock_locator = MagicMock()
+    mock_locator.all = AsyncMock(return_value=[mock_el1])
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    board = chess.Board()
+    board.push_san('e4')  # already applied
+    new_count = await watcher.tick(board)
+
+    assert new_count == 0
+    assert board.ply() == 1  # unchanged
+
+
+async def test_tick_filters_blank_san_text():
+    mock_el1 = MagicMock()
+    mock_el1.inner_text = AsyncMock(return_value='  ')  # blank
+    mock_el2 = MagicMock()
+    mock_el2.inner_text = AsyncMock(return_value='d4')
+
+    mock_locator = MagicMock()
+    mock_locator.all = AsyncMock(return_value=[mock_el1, mock_el2])
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    board = chess.Board()
+    new_count = await watcher.tick(board)
+
+    assert new_count == 1
+    assert board.ply() == 1
