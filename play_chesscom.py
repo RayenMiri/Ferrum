@@ -76,7 +76,7 @@ class BoardWatcher:
     async def detect_color(self) -> chess.Color:
         locator = self.page.locator('chess-board')
         classes = await locator.get_attribute('class') or ''
-        return chess.BLACK if 'flipped' in classes else chess.WHITE
+        return chess.BLACK if 'flipped' in classes.split() else chess.WHITE
 
     async def _get_dom_san_list(self) -> list[str]:
         elements = await self.page.locator('.node .san').all()
@@ -92,6 +92,11 @@ class BoardWatcher:
         san_list = await self._get_dom_san_list()
         already_applied = board.ply()
         new_moves = san_list[already_applied:]
+        applied = 0
         for san in new_moves:
-            board.push_san(san)
-        return len(new_moves)
+            try:
+                board.push_san(san)
+                applied += 1
+            except (chess.IllegalMoveError, ValueError):
+                break  # DOM returned illegal move; re-sync next tick
+        return applied
