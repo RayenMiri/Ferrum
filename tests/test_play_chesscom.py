@@ -4,7 +4,7 @@ import chess
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from play_chesscom import HotkeyController, MoveExecutor
+from play_chesscom import HotkeyController, MoveExecutor, BoardWatcher
 
 
 def test_f9_sets_paused():
@@ -76,3 +76,40 @@ def test_board_offset_is_applied():
     x, y = MoveExecutor._square_to_page_coords(chess.A1, flipped=False, board_box=box)
     assert x == pytest.approx(150.0)   # 100 + 50
     assert y == pytest.approx(950.0)   # 200 + 750
+
+
+async def test_detect_color_returns_white_when_no_flipped_class():
+    mock_locator = MagicMock()
+    mock_locator.get_attribute = AsyncMock(return_value='board-component layout-normal')
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    color = await watcher.detect_color()
+
+    assert color == chess.WHITE
+    mock_page.locator.assert_called_with('chess-board')
+
+
+async def test_detect_color_returns_black_when_flipped_class_present():
+    mock_locator = MagicMock()
+    mock_locator.get_attribute = AsyncMock(return_value='board-component flipped')
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    color = await watcher.detect_color()
+
+    assert color == chess.BLACK
+
+
+async def test_detect_color_handles_none_attribute():
+    mock_locator = MagicMock()
+    mock_locator.get_attribute = AsyncMock(return_value=None)
+    mock_page = MagicMock()
+    mock_page.locator.return_value = mock_locator
+
+    watcher = BoardWatcher(mock_page)
+    color = await watcher.detect_color()
+
+    assert color == chess.WHITE

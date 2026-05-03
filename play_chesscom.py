@@ -67,3 +67,31 @@ class MoveExecutor:
             x = board_box['x'] + (7 - file_idx + 0.5) * cell
             y = board_box['y'] + (rank_idx + 0.5) * cell
         return x, y
+
+
+class BoardWatcher:
+    def __init__(self, page: Page) -> None:
+        self.page = page
+
+    async def detect_color(self) -> chess.Color:
+        locator = self.page.locator('chess-board')
+        classes = await locator.get_attribute('class') or ''
+        return chess.BLACK if 'flipped' in classes else chess.WHITE
+
+    async def _get_dom_san_list(self) -> list[str]:
+        elements = await self.page.locator('.node .san').all()
+        result = []
+        for el in elements:
+            text = await el.inner_text()
+            stripped = text.strip()
+            if stripped:
+                result.append(stripped)
+        return result
+
+    async def tick(self, board: chess.Board) -> int:
+        san_list = await self._get_dom_san_list()
+        already_applied = board.ply()
+        new_moves = san_list[already_applied:]
+        for san in new_moves:
+            board.push_san(san)
+        return len(new_moves)
