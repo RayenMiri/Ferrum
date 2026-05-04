@@ -1,0 +1,14 @@
+{
+  "release": "v0.1.0-alpha",
+  "date": "2026-05-04",
+  "checkpoint": "ckpt_epoch6_step51000.pt",
+  "checkpoint_path": "releases/v0.1.0-alpha/ckpt_epoch6_step51000.pt",
+  "status": "experimental alpha",
+  "model": "policy-only chess engine",
+  "training_source": "Lichess 2020-03 standard rated",
+  "notes": [
+    "Legal-move masking is enabled before move selection.",
+    "Strength is intentionally experimental and evolving.",
+    "The release is packaged for structure and reproducibility."
+  ]
+}
