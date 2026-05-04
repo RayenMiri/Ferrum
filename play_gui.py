@@ -10,6 +10,7 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import random
 import threading
 import tkinter as tk
 from dataclasses import dataclass
@@ -108,8 +109,8 @@ class ChessGUI:
     def __init__(
         self,
         root: tk.Tk,
-        black_player: FerrumOpponent | None,
         white_player: FerrumOpponent | None,
+        black_player: FerrumOpponent | None,
         human_color: str | None,
     ):
         self.root = root
@@ -122,6 +123,7 @@ class ChessGUI:
         self.legal_targets: set[int] = set()
         self.thinking = False
         self.game_over = False
+        self.auto_opening_done = False
         self.asset_dir = Path(__file__).resolve().parent / "assets"
         self.piece_images = self._load_piece_images()
 
@@ -204,6 +206,7 @@ class ChessGUI:
         self.selected_square = None
         self.legal_targets = set()
         self.game_over = False
+        self.auto_opening_done = False
         self.clear_log()
         self.refresh_board()
         self.root.after(250, self.request_opponent_move)
@@ -260,10 +263,19 @@ class ChessGUI:
         self.thinking = True
         self.status.set(self._status_text(prefix=f"{player.label} thinking..."))
         board_copy = self.board.copy(stack=False)
+        opening_random_move = (
+            self.auto_mode
+            and not self.auto_opening_done
+            and board_copy.turn == chess.WHITE
+            and board_copy.fullmove_number == 1
+        )
 
         def worker() -> None:
             try:
-                move = player.choose_move(board_copy)
+                if opening_random_move:
+                    move = random.choice(list(board_copy.legal_moves))
+                else:
+                    move = player.choose_move(board_copy)
                 error = None
             except Exception as exc:
                 move = None
@@ -275,6 +287,8 @@ class ChessGUI:
                     self.status.set(f"Engine error: {error}")
                     return
                 if move is not None and move in self.board.legal_moves:
+                    if opening_random_move:
+                        self.auto_opening_done = True
                     self.board.push(move)
                     self.append_log(f"{player.label}: {move}")
                 else:

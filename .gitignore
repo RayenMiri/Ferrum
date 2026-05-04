@@ -2,6 +2,7 @@
 .env
 /venv
 /docs
+/checkpoints
 graphify-out/
 visualizations/
 tools/
