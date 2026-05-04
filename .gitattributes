@@ -1,1 +1,2 @@
+releases/v0.1.0-alpha/ckpt_epoch6_step51000.pt filter=lfs diff=lfs merge=lfs -text
 checkpoints/*.pt filter=lfs diff=lfs merge=lfs -text
