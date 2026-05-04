@@ -2,10 +2,11 @@
 .env
 /venv
 /docs
-/checkpoints
 graphify-out/
+checkpoints/
 visualizations/
 tools/
 *.pyc
 .claude
 claude.md
+play_chesscom.py
